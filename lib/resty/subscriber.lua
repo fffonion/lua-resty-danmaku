@@ -1,0 +1,147 @@
+-- subscriber implementaion
+local util = require "resty.danmaku.util"
+local ws_server = require "resty.websocket.server"
+
+local _M = util.new_tab(0, 13)
+local mt = { __index = _M }
+
+
+
+function _M.new(self, opts)
+	local uid = util.random_str(16)
+
+        local msg_queue = {}
+
+	local wb, err = ws_server:new{
+		timeout = ngx.var.keep_alive_timeout or 60000,  -- in milliseconds
+		max_payload_len = 65535,
+	}
+	
+        local semaphore = require "ngx.semaphore"
+        local queue_sema = semaphore.new()
+
+	ngx.log(ngx.ERR, "initializing new subscriber ", uid)
+	
+	if not wb then
+		ngx.log(ngx.ERR, "failed to new websocket: ", err)
+		return ngx.exit(444)
+	end
+	
+	local _ = setmetatable({
+		wb = wb,
+                uid = uid,
+                msg_queue = msg_queue,
+		name = opts.name or uid,
+		liveid = opts.liveid,
+                closed = false,
+                queue_sema = queue_sema,
+                _broadcaster = util.get_broadcaster(opts.liveid)
+    }, mt)
+	
+	util.set_subscriber(uid, _)
+        _._broadcaster:add_subscriber(uid)
+
+	return _
+end
+
+function _M.recv_loop(self)
+	while not self.closed do
+		-- the following is partly based on resty.websocket example
+		
+		local data, typ, err = self.wb:recv_frame()
+		
+		ngx.log(ngx.WARN, "recv", data, typ)
+		
+		
+		if not data or err then
+			ngx.log(ngx.ERR, "closing ", self.uid, " in ", self.liveid, err)
+			break
+		end
+
+		if typ == "close" then
+			-- send a close frame back:
+
+			local bytes, err = self.wb:send_close(1000, "bye")
+			if not bytes then
+				ngx.log(ngx.ERR, "[danmaku] failed to send the close frame: ", err)
+				break
+			end
+			local code = err
+			ngx.log(ngx.ERR, "closing with status code ", code, " and message ", data)
+			break
+		end
+
+		if typ == "ping" then
+			-- send a pong frame back:
+
+			local bytes, err = self.wb:send_pong(data)
+			if not bytes then
+				ngx.log(ngx.ERR, "failed to send frame: ", err)
+				return
+			end
+		elseif typ == "pong" then
+			-- just discard the incoming pong frame
+
+		else
+			_M.broadcast(self, {text = data})
+			-- ngx.sleep(120)
+			ngx.log(ngx.ERR, "received a frame of type ", typ, " and payload ", data)
+		end
+
+		--[[
+		if not bytes then
+			ngx.log(ngx.ERR, "failed to send a text frame: ", err)
+			return ngx.exit(444)
+		end
+
+		bytes, err = self.wb:send_binary("blah blah blah...")
+		if not bytes then
+			ngx.log(ngx.ERR, "failed to send a binary frame: ", err)
+			return ngx.exit(444)
+		end
+		]]
+	end
+        
+        self.closed = true
+        self._broadcaster:del_subscriber(self.uid)
+
+	local bytes, err = self.wb:send_close(1000, "bye")
+	if not bytes then
+		ngx.log(ngx.ERR, "failed to send the close frame: ", err)
+		return
+	end
+
+end
+
+function _M.send_loop(self)
+        while not self.closed do
+            self.queue_sema:wait(5)
+            for k, v in pairs(self.msg_queue) do
+                self.wb:send_text(v)
+                self.msg_queue[k] = nil
+            end
+        end
+end
+
+function _M.broadcast(self, tb)
+	local json = require("cjson")
+	tb.uid = self.uid
+        tb.msgid = util.random_str(16)
+	tb.name = self.name
+	local br = util.get_broadcaster(self.liveid)
+	if br then
+		return br:queue_msg(json.encode(tb))
+	else
+		return nil
+	end
+end
+
+function _M.push(self, msgid, dt)
+        if self.queue_sema:count() < 1 then -- leave 1 spare resource
+            self.queue_sema:post()
+        end
+        self.msg_queue[msgid] = dt
+    end
+
+
+return _M
