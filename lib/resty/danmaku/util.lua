@@ -1,5 +1,10 @@
 
 local _M = { _VERSION = '0.01' }
+local shm_key = "dmk"
+local shm_ins_key = 'dmk_instance'
+
+_M.shm_key = shm_key
+_M.shm_ins_key = shm_ins_key
 
 local ok, new_tab = pcall(require, "table.new")
 if not ok then
@@ -23,29 +28,37 @@ function _M.random_str(l, seed)
 end
 
 function _init_shared_pool()
-    if ngx.shared['dmk_instances'] == nil then
-        ngx.shared['dmk_instances'] = {}
+    if ngx.shared[shm_ins_key] == nil then
+        ngx.shared[shm_ins_key] = {}
     end
 end
 
 function _M.get_broadcaster(liveid)
     _init_shared_pool()
-    return ngx.shared['dmk_instances']['broadcaster_' .. liveid]
+    return ngx.shared[shm_ins_key]['broadcaster_' .. liveid]
 end
 
 function _M.set_broadcaster(liveid, tb)
     _init_shared_pool()
-    ngx.shared['dmk_instances']['broadcaster_' .. liveid] = tb
+    ngx.shared[shm_ins_key]['broadcaster_' .. liveid] = tb
+end
+
+function _M.get_broadcaster_gid(liveid)
+    return ngx.shared[shm_key]:get("broadcaster_gid_" .. liveid)
+end
+
+function _M.set_broadcaster_gid(liveid, v)
+    return ngx.shared[shm_key]:set("broadcaster_gid_" .. liveid, v)
 end
 
 function _M.get_subscriber(uid)
     _init_shared_pool()
-    return ngx.shared['dmk_instances']['subscriber_' .. uid]
+    return ngx.shared[shm_ins_key]['subscriber_' .. uid]
 end
 
 function _M.set_subscriber(uid, tb)
     _init_shared_pool()
-    ngx.shared['dmk_instances']['subscriber_' .. uid] = tb
+    ngx.shared[shm_ins_key]['subscriber_' .. uid] = tb
 end
 
 return _M

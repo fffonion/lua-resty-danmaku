@@ -1,3 +1,4 @@
+local util = require "resty.danmaku.util"
 local _M = {}
 
 function _M._get_stat()
@@ -10,24 +11,22 @@ function _M._get_stat()
     '[Total danmaku]\n' ..
     'Total: ' .. tostring(ngx.shared.dmk:get('dm_cnt_all')) .. '\n' ..
     '[Live rooms]\n'
-    
-    if ngx.shared['dmk_instances'] == nil then
+
+    if ngx.shared[util.shm_ins_key] == nil then
         ret = ret .. "-- no rooms"
-        -- return ret
+        return ret
     end
 
-    for k, _ in pairs(ngx.shared['dmk_instances']) do
-       local iterator, err = ngx.re.gmatch(k, "broadcaster_(%d+)")
-       if iterator then
-           local liveid, err = iterator()
-           if liveid then
-               ret = ret .. "Room=" .. tostring(liveid) .. " Subscribers=" .. 
-                tostring(#ngx.shared.dmk:get('broadcaster_' .. tostring(liveid)).subscribers)
-               if v.dying > 0 then
-                   ret = ret .. " Dying=" .. tostring(v.dying) ..
-                    "(" .. tostring(v.dying - os.time())
-               end
-           end
+    for k, _ in pairs(ngx.shared[util.shm_ins_key]) do
+        local m, err = ngx.re.match(k, "broadcaster_(\\d+)")
+        if m then
+            local liveid = m[1]
+            local b = util.get_broadcaster(liveid)
+            ret = ret .. "Room=" .. tostring(liveid) .. " Subscribers=" .. tostring(b.subs_count)
+            if b.dying > 0 then
+               ret = ret .. " Dying=" .. tostring(b.dying) ..
+                "(" .. tostring(b.dying - os.time())
+            end
         end
      end
      return ret
@@ -62,7 +61,7 @@ function _M._brd_destory()
     if ngx.shared.dmk:get('brd_cnt_destory') == nil then
         ngx.shared.dmk:set('brd_cnt_destory', 1)
     else
-        ngx.shared.dmk:incr('brd_cnt_destory', -1)
+        ngx.shared.dmk:incr('brd_cnt_destory', 1)
     end 
 end
 
