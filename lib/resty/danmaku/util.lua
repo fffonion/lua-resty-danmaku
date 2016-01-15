@@ -13,7 +13,7 @@ function _M.random_str(l, seed)
  
     local ret ='' 
         -- os.time() is precise to second
-        math.randomseed(ngx.time() * 1000 + ngx.crc32_short(seed or ""))
+        math.randomseed(ngx.now() * 1000 + ngx.crc32_short(seed or ""))
     for i=1 ,l do
         local pos = math.random(1, string.len(s))
         ret = ret .. string.sub(s, pos, pos)
@@ -22,20 +22,30 @@ function _M.random_str(l, seed)
     return ret 
 end
 
+function _init_shared_pool()
+    if ngx.shared['dmk_instances'] == nil then
+        ngx.shared['dmk_instances'] = {}
+    end
+end
+
 function _M.get_broadcaster(liveid)
-    return ngx.shared["dmk_broadcaster_" .. liveid]
+    _init_shared_pool()
+    return ngx.shared['dmk_instances']['broadcaster_' .. liveid]
 end
 
 function _M.set_broadcaster(liveid, tb)
-    ngx.shared["dmk_broadcaster_" .. liveid] = tb
+    _init_shared_pool()
+    ngx.shared['dmk_instances']['broadcaster_' .. liveid] = tb
 end
 
 function _M.get_subscriber(uid)
-    return ngx.shared["dmk_subscriber_" .. uid]
+    _init_shared_pool()
+    return ngx.shared['dmk_instances']['subscriber_' .. uid]
 end
 
 function _M.set_subscriber(uid, tb)
-    ngx.shared["dmk_subscriber_" .. uid] = tb
+    _init_shared_pool()
+    ngx.shared['dmk_instances']['subscriber_' .. uid] = tb
 end
 
 return _M

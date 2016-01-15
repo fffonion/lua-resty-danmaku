@@ -1,5 +1,6 @@
 -- subscriber implementaion
 local util = require "resty.danmaku.util"
+local stat = require "resty.danmaku.stat"
 local ws_server = require "resty.websocket.server"
 
 local _M = util.new_tab(0, 13)
@@ -20,7 +21,7 @@ function _M.new(self, opts)
         local semaphore = require "ngx.semaphore"
         local queue_sema = semaphore.new()
 
-	ngx.log(ngx.ERR, "initializing new subscriber ", uid)
+	ngx.log(ngx.NOTICE, "initializing new subscriber ", uid)
 	
 	if not wb then
 		ngx.log(ngx.ERR, "failed to new websocket: ", err)
@@ -41,7 +42,8 @@ function _M.new(self, opts)
 	util.set_subscriber(uid, _)
         _._broadcaster:add_subscriber(uid)
 
-	return _
+        stat._sub_create()
+        return _
 end
 
 function _M.recv_loop(self)
@@ -50,11 +52,8 @@ function _M.recv_loop(self)
 		
 		local data, typ, err = self.wb:recv_frame()
 		
-		ngx.log(ngx.WARN, "recv", data, typ)
-		
-		
 		if not data or err then
-			ngx.log(ngx.ERR, "closing ", self.uid, " in ", self.liveid, err)
+			ngx.log(ngx.WARN, "closing ", self.uid, " in ", self.liveid, err)
 			break
 		end
 
@@ -67,7 +66,7 @@ function _M.recv_loop(self)
 				break
 			end
 			local code = err
-			ngx.log(ngx.ERR, "closing with status code ", code, " and message ", data)
+			ngx.log(ngx.ERR, "[danmaku] closing with status code ", code, " and message ", data)
 			break
 		end
 
@@ -76,16 +75,22 @@ function _M.recv_loop(self)
 
 			local bytes, err = self.wb:send_pong(data)
 			if not bytes then
-				ngx.log(ngx.ERR, "failed to send frame: ", err)
+				ngx.log(ngx.ERR, "[danmaku] failed to send frame: ", err)
 				return
 			end
 		elseif typ == "pong" then
 			-- just discard the incoming pong frame
 
 		else
-			_M.broadcast(self, {text = data})
+                        local json = require "cjson"
+			data = json.decode(data)
+                        -- ngx.log(ngx.ERR, "type=", data["type"])
+                        if data["type"] ~= "heartbeat" then
+                            _M.broadcast(self, data)
+                            stat._sent_dm()
+                        end
 			-- ngx.sleep(120)
-			ngx.log(ngx.ERR, "received a frame of type ", typ, " and payload ", data)
+			-- ngx.log(ngx.ERR, "received a frame of type ", typ, " and payload ", data)
 		end
 
 		--[[
@@ -104,10 +109,12 @@ function _M.recv_loop(self)
         
         self.closed = true
         self._broadcaster:del_subscriber(self.uid)
+        
+        stat._sub_destory()
 
 	local bytes, err = self.wb:send_close(1000, "bye")
 	if not bytes then
-		ngx.log(ngx.ERR, "failed to send the close frame: ", err)
+		ngx.log(ngx.ERR, "[danmaku] failed to send the close frame: ", err)
 		return
 	end
 
