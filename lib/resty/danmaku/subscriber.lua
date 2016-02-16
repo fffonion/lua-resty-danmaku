@@ -109,6 +109,8 @@ function _M.recv_loop(self)
 end
 
 function _M.send_loop(self)
+    -- send meta on start
+    _M.push(self, "0", self._broadcaster:get_meta())
     while not self.closed do
         self.queue_sema:wait(5)
         for k, v in pairs(self.msg_queue) do

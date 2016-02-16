@@ -2,22 +2,24 @@ local util = require "resty.danmaku.util"
 local _M = {}
 
 function _M._get_stat()
+    local rds = util.get_redis()
     local ret = '[Total subscriber]\n' ..
-    'Create: '.. tostring(ngx.shared.dmk:get('sub_cnt_create')) .. '\n' ..
-    'Destory: '.. tostring(ngx.shared.dmk:get('sub_cnt_destory')) .. '\n' ..
+    'Create: '.. tostring(rds:get('sub_cnt_create')) .. '\n' ..
+    'Destory: '.. tostring(rds:get('sub_cnt_destory')) .. '\n' ..
     '[Total broadcaster]\n' ..
-    'Create: '.. tostring(ngx.shared.dmk:get('brd_cnt_create')) .. '\n' ..
-    'Destory: '.. tostring(ngx.shared.dmk:get('brd_cnt_destory')) .. '\n' ..
+    'Create: '.. tostring(rds:get('brd_cnt_create')) .. '\n' ..
+    'Destory: '.. tostring(rds:get('brd_cnt_destory')) .. '\n' ..
     '[Total danmaku]\n' ..
-    'Total: ' .. tostring(ngx.shared.dmk:get('dm_cnt_all')) .. '\n' ..
+    'Total: ' .. tostring(rds:get('dm_cnt_all')) .. '\n' ..
     '[Live rooms]\n'
+    util.close_redis(rds)
 
-    if ngx.shared[util.shm_ins_key] == nil then
+    if util.shared == nil then
         ret = ret .. "-- no rooms"
         return ret
     end
 
-    for k, _ in pairs(ngx.shared[util.shm_ins_key]) do
+    for k, _ in pairs(util.shared) do
         local m, err = ngx.re.match(k, "broadcaster_(\\d+)")
         if m then
             local liveid = m[1]
@@ -33,44 +35,54 @@ function _M._get_stat()
 end
 
 function _M._sub_create()
-    if ngx.shared.dmk:get('sub_cnt_create') == nil then
-        ngx.shared.dmk:set('sub_cnt_create', 1)
+    local rds = util.get_redis()
+    if rds:get('sub_cnt_create') == nil then
+        rds:set('sub_cnt_create', 1)
     else
-        ngx.shared.dmk:incr('sub_cnt_create', 1)
+        rds:incr('sub_cnt_create', 1)
     end
+    util.close_redis(rds)
 end
 
 function _M._sub_destory()
-    if ngx.shared.dmk:get('sub_cnt_destory') == nil then
-        ngx.shared.dmk:set('sub_cnt_destory', 1 )
+    local rds = util.get_redis()
+    if rds:get('sub_cnt_destory') == nil then
+        rds:set('sub_cnt_destory', 1 )
     else
-        ngx.shared.dmk:incr('sub_cnt_destory', 1)
+        rds:incr('sub_cnt_destory', 1)
     end 
+    util.close_redis(rds)
 end
 
 
 function _M._brd_create()
-    if ngx.shared.dmk:get('brd_cnt_create') == nil then
-        ngx.shared.dmk:set('brd_cnt_create', 1)
+    local rds = util.get_redis()
+    if rds:get('brd_cnt_create') == nil then
+        rds:set('brd_cnt_create', 1)
     else
-        ngx.shared.dmk:incr('brd_cnt_create', 1)
-    end 
+        rds:incr('brd_cnt_create', 1)
+    end
+    util.close_redis(rds)
 end
 
 function _M._brd_destory()
-    if ngx.shared.dmk:get('brd_cnt_destory') == nil then
-        ngx.shared.dmk:set('brd_cnt_destory', 1)
+    local rds = util.get_redis()
+    if rds:get('brd_cnt_destory') == nil then
+        rds:set('brd_cnt_destory', 1)
     else
-        ngx.shared.dmk:incr('brd_cnt_destory', 1)
+        rds:incr('brd_cnt_destory', 1)
     end 
+    util.close_redis(rds)
 end
 
 function _M._sent_dm()
-    if ngx.shared.dmk:get('dm_cnt_all') == nil then
-        ngx.shared.dmk:set('dm_cnt_all', 1) 
+    local rds = util.get_redis()
+    if rds:get('dm_cnt_all') == nil then
+        rds:set('dm_cnt_all', 1) 
     else
-        ngx.shared.dmk:incr('dm_cnt_all', 1) 
-    end 
+        rds:incr('dm_cnt_all', 1) 
+    end
+    util.close_redis(rds)
 end   
 
 return _M

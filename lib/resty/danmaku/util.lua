@@ -1,10 +1,8 @@
 
 local _M = { _VERSION = '0.01' }
-local shm_key = "dmk"
-local shm_ins_key = 'dmk_instance'
 
-_M.shm_key = shm_key
-_M.shm_ins_key = shm_ins_key
+_M.shm_key = "dmk"
+_M.shared = {}
 
 local ok, new_tab = pcall(require, "table.new")
 if not ok then
@@ -27,38 +25,59 @@ function _M.random_str(l, seed)
     return ret 
 end
 
-function _init_shared_pool()
-    if ngx.shared[shm_ins_key] == nil then
-        ngx.shared[shm_ins_key] = {}
-    end
-end
-
 function _M.get_broadcaster(liveid)
-    _init_shared_pool()
-    return ngx.shared[shm_ins_key]['broadcaster_' .. liveid]
+    -- ngx.log(ngx.ERR, "get_bro ->", liveid, "<-", tostring(_M.shared['broadcaster_' .. liveid]))
+    return _M.shared['broadcaster_' .. liveid]
 end
 
 function _M.set_broadcaster(liveid, tb)
-    _init_shared_pool()
-    ngx.shared[shm_ins_key]['broadcaster_' .. liveid] = tb
+    _M.shared['broadcaster_' .. liveid] = tb
 end
 
 function _M.get_broadcaster_gid(liveid)
-    return ngx.shared[shm_key]:get("broadcaster_gid_" .. liveid)
+    local rds = _M.get_redis()
+    local rt = rds:get("broadcaster_gid_" .. liveid)
+    _M.close_redis(rds)
+    return rt
 end
 
 function _M.set_broadcaster_gid(liveid, v)
-    return ngx.shared[shm_key]:set("broadcaster_gid_" .. liveid, v)
+    local rds = _M.get_redis()
+    local rt = rds:set("broadcaster_gid_" .. liveid, v)
+    _M.close_redis(rds)
+    return rt
+    
 end
 
 function _M.get_subscriber(uid)
-    _init_shared_pool()
-    return ngx.shared[shm_ins_key]['subscriber_' .. uid]
+    return _M.shared['subscriber_' .. uid]
 end
 
 function _M.set_subscriber(uid, tb)
-    _init_shared_pool()
-    ngx.shared[shm_ins_key]['subscriber_' .. uid] = tb
+    _M.shared['subscriber_' .. uid] = tb
+end
+
+function _M.get_redis()
+        local redis = require "resty.redis"
+        local rds, err = redis:new()
+        if not rds then
+            ngx.log(ngx.ERR, "[LI] failed to instantiate redis: ", err)
+            return nil
+        end
+        rds:set_timeout(1000) -- 1 sec
+        local ok, err = rds:connect("127.0.0.1", 6379)
+        if not ok then
+            ngx.log(ngx.ERR, "[LI] failed to connect: ", err)
+            return nil
+        end
+        return rds
+end
+
+function _M.close_redis(rds)
+    local ok, err = rds:set_keepalive(10000, 10)
+    if ok == nil then
+        rds:close()
+    end
 end
 
 return _M
